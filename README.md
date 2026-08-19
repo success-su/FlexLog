@@ -1,7 +1,7 @@
 # FlexLog (mobile)
 
 A workout tracker built with Expo + Expo Router, NativeWind (Tailwind for React Native), and
-Firebase (Auth + Firestore) so your logged sets sync to your account and follow you to any phone,
+Supabase (Auth + Postgres) so your logged sets sync to your account and follow you to any phone,
 at any gym.
 
 The previous web version (Vite + React + localStorage) has been moved to [`legacy-web/`](./legacy-web)
@@ -25,12 +25,12 @@ app/                      Expo Router — file-based routes
 
 src/
   lib/                     Framework-free business logic (ported from the web app)
-    firebase.js              Firebase app/auth/firestore init (reads from .env)
+    supabase.js              Supabase client init (reads from .env)
     oneRepMax.js, dates.js, units.js
     authErrors.js
   context/                 App-wide state, kept separate from the UI
-    AuthContext.jsx          Firebase auth session
-    EntriesContext.jsx        Firestore-synced workout entries + edit state
+    AuthContext.jsx          Supabase auth session
+    EntriesContext.jsx        Realtime-synced workout entries + edit state
     ToastContext.jsx          In-app toast notifications
   hooks/
     useEntries.js, useCountUp.js, usePersistedState.js
@@ -44,30 +44,47 @@ directory so the auth flow can be reasoned about independently from the logged-i
 
 ## One-time setup
 
-### 1. Create a Firebase project
+### 1. Create a Supabase project
 
-You'll need to do this yourself in the [Firebase console](https://console.firebase.google.com/) —
-it requires your own Google account, so it isn't something that can be scripted for you:
+You'll need to do this yourself at [supabase.com](https://supabase.com/dashboard) — it requires
+your own account, so it isn't something that can be scripted for you:
 
-1. Create a new project (Analytics is optional, you can skip it).
-2. **Build → Authentication → Get started → Sign-in method** → enable **Email/Password**.
-3. **Build → Firestore Database → Create database** → start in production mode, pick a region.
-4. In Firestore, go to the **Rules** tab and replace the default rules with:
+1. **New project** → pick an org, name it (e.g. `flexlog`), set a database password (save it
+   somewhere — you won't need it day-to-day, but you'll want it if you ever connect a DB client
+   directly), pick a region → **Create new project** (takes ~1-2 minutes to provision).
+2. Once it's ready, open the **SQL Editor** (left sidebar) → **New query**, paste this, and run it:
 
+   ```sql
+   create table entries (
+     id uuid primary key default gen_random_uuid(),
+     user_id uuid not null references auth.users(id) on delete cascade,
+     exercise text not null,
+     weight numeric not null,
+     reps integer not null,
+     unit text not null check (unit in ('lb', 'kg')),
+     date text not null,
+     created_at timestamptz not null default now()
+   );
+
+   alter table entries enable row level security;
+
+   create policy "Users manage their own entries"
+     on entries
+     for all
+     using (auth.uid() = user_id)
+     with check (auth.uid() = user_id);
+
+   alter publication supabase_realtime add table entries;
    ```
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       match /users/{userId}/entries/{entryId} {
-         allow read, write: if request.auth != null && request.auth.uid == userId;
-       }
-     }
-   }
-   ```
 
-   This keeps every user's sets private to their own account.
-5. **Project settings (gear icon) → General → Your apps → Web app (`</>`)** → register an app
-   (no need for Firebase Hosting). Copy the `firebaseConfig` values it gives you.
+   This creates the table, turns on Row Level Security so users can only ever see their own rows,
+   and enables realtime so the app updates live across devices.
+3. *(Optional, recommended for quick testing)* **Authentication → Providers → Email** → turn off
+   **Confirm email**. With it on, Supabase emails a confirmation link before a new signup can log
+   in — fine for a real launch, mildly annoying while you're just testing on your own phone.
+4. **Project Settings (gear icon) → Data API** → copy the **Project URL**.
+5. **Project Settings → API Keys** → copy the **anon / public** key (not the `service_role` one —
+   that one must never go in the app).
 
 ### 2. Configure the app
 
@@ -75,8 +92,15 @@ it requires your own Google account, so it isn't something that can be scripted 
 cp .env.example .env
 ```
 
-Fill in `.env` with the values from step 1.5 (`apiKey`, `authDomain`, `projectId`,
-`storageBucket`, `messagingSenderId`, `appId`). `.env` is gitignored, so your keys stay local.
+Fill in `.env` with the values from steps 1.4–1.5:
+
+```
+EXPO_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
+```
+
+`.env` is gitignored, so your keys stay local. The anon key is safe to ship in the app — it's
+meant to be public; Row Level Security (step 1.2) is what actually protects the data.
 
 ### 3. Install and run
 
@@ -90,13 +114,14 @@ account on your phone, then sign in with the same account on another device to s
 
 ## What's implemented
 
-- Email/password sign up, login, logout (Firebase Auth), gated with Expo Router's
+- Email/password sign up, login, logout (Supabase Auth), gated with Expo Router's
   `Stack.Protected`.
 - Log a set, live estimated-1RM preview, per-exercise suggestions.
 - History grouped by date, PR badges, edit/delete with undo, per-exercise filter chips.
 - Progress: best estimated 1RM per exercise (lb/kg toggle) and a weekly consistency chart.
 - Settings: dark mode toggle, share data as JSON, clear all data, sign out.
-- All workout data lives in Firestore under `users/{uid}/entries`, synced in real time.
+- All workout data lives in the Postgres `entries` table, scoped per-user by Row Level Security
+  and synced in real time via Supabase Realtime.
 
 ## Known limitations
 

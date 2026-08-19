@@ -1,17 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-} from 'firebase/firestore'
-import { db } from '../lib/firebase'
+import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
 export function useEntries() {
@@ -19,59 +7,71 @@ export function useEntries() {
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const entriesRef = useMemo(
-    () => (user ? collection(db, 'users', user.uid, 'entries') : null),
-    [user],
-  )
-
   useEffect(() => {
-    if (!entriesRef) {
+    if (!user) {
       setEntries([])
       setLoading(false)
       return undefined
     }
+
+    let active = true
     setLoading(true)
-    const entriesQuery = query(entriesRef, orderBy('createdAt', 'desc'))
-    const unsubscribe = onSnapshot(
-      entriesQuery,
-      (snapshot) => {
-        setEntries(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })))
-        setLoading(false)
-      },
-      (error) => {
-        console.warn('Failed to sync entries:', error.message)
-        setLoading(false)
-      },
-    )
-    return unsubscribe
-  }, [entriesRef])
+
+    async function load() {
+      const { data, error } = await supabase
+        .from('entries')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (!active) return
+      if (error) console.warn('Failed to load entries:', error.message)
+      setEntries(data ?? [])
+      setLoading(false)
+    }
+
+    load()
+
+    const channel = supabase
+      .channel(`entries-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'entries', filter: `user_id=eq.${user.id}` },
+        load,
+      )
+      .subscribe()
+
+    return () => {
+      active = false
+      supabase.removeChannel(channel)
+    }
+  }, [user])
 
   async function addEntry(entry) {
-    if (!entriesRef) return
-    await addDoc(entriesRef, { ...entry, createdAt: serverTimestamp() })
+    if (!user) return
+    const { error } = await supabase.from('entries').insert({ ...entry, user_id: user.id })
+    if (error) throw error
   }
 
   async function updateEntry(id, patch) {
-    if (!user) return
-    await updateDoc(doc(db, 'users', user.uid, 'entries', id), patch)
+    const { error } = await supabase.from('entries').update(patch).eq('id', id)
+    if (error) throw error
   }
 
   async function deleteEntry(id) {
-    if (!user) return
-    await deleteDoc(doc(db, 'users', user.uid, 'entries', id))
+    const { error } = await supabase.from('entries').delete().eq('id', id)
+    if (error) throw error
   }
 
   async function restoreEntry(entry) {
     if (!user) return
     const { id, ...data } = entry
-    await setDoc(doc(db, 'users', user.uid, 'entries', id), data)
+    const { error } = await supabase.from('entries').insert({ id, ...data, user_id: user.id })
+    if (error) throw error
   }
 
   async function clearAllEntries() {
     if (!user) return
-    await Promise.all(
-      entries.map((entry) => deleteDoc(doc(db, 'users', user.uid, 'entries', entry.id))),
-    )
+    const { error } = await supabase.from('entries').delete().eq('user_id', user.id)
+    if (error) throw error
   }
 
   return { entries, loading, addEntry, updateEntry, deleteEntry, restoreEntry, clearAllEntries }

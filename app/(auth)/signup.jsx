@@ -13,10 +13,12 @@ export default function SignupScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit() {
     setError('')
+    setInfo('')
     if (!email.trim() || !password) {
       setError('Enter your email and password.')
       return
@@ -27,7 +29,10 @@ export default function SignupScreen() {
     }
     setLoading(true)
     try {
-      await signUp(name, email, password)
+      const { needsEmailConfirmation } = await signUp(name, email, password)
+      if (needsEmailConfirmation) {
+        setInfo('Almost there — check your email to confirm your account, then log in.')
+      }
     } catch (err) {
       setError(friendlyAuthError(err))
     } finally {
@@ -91,6 +96,9 @@ export default function SignupScreen() {
           </View>
 
           {error ? <Text className="text-sm text-red-600 dark:text-red-400">{error}</Text> : null}
+          {info ? (
+            <Text className="text-sm text-green-600 dark:text-green-400">{info}</Text>
+          ) : null}
 
           <PrimaryButton
             label="Create account"

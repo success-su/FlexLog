@@ -54,7 +54,7 @@ export default function SettingsScreen() {
           Account
         </Text>
         <Text className="text-sm text-neutral-700 dark:text-neutral-200">
-          {user?.displayName || 'Signed in'}
+          {user?.user_metadata?.full_name || 'Signed in'}
         </Text>
         <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
           {user?.email}

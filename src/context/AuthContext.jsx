@@ -1,12 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import {
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  updateProfile,
-} from 'firebase/auth'
-import { auth } from '../lib/firebase'
+import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
@@ -15,27 +8,42 @@ export function AuthProvider({ children }) {
   const [initializing, setInitializing] = useState(true)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
       setInitializing(false)
     })
-    return unsubscribe
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
   async function signUp(name, email, password) {
-    const credential = await createUserWithEmailAndPassword(auth, email.trim(), password)
-    if (name.trim()) {
-      await updateProfile(credential.user, { displayName: name.trim() })
-      setUser(auth.currentUser)
-    }
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: { data: { full_name: name.trim() || undefined } },
+    })
+    if (error) throw error
+    // If email confirmation is required, Supabase returns no session yet.
+    return { needsEmailConfirmation: !data.session }
   }
 
   async function signIn(email, password) {
-    await signInWithEmailAndPassword(auth, email.trim(), password)
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
+    if (error) throw error
   }
 
   async function signOut() {
-    await firebaseSignOut(auth)
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
   }
 
   return (

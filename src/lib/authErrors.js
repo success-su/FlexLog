@@ -1,16 +1,13 @@
 export function friendlyAuthError(error) {
-  const code = error?.code || ''
-  if (
-    code.includes('invalid-credential') ||
-    code.includes('wrong-password') ||
-    code.includes('user-not-found')
-  ) {
-    return 'Incorrect email or password.'
+  const message = error?.message || 'Something went wrong. Please try again.'
+  const lower = message.toLowerCase()
+
+  if (lower.includes('invalid login credentials')) return 'Incorrect email or password.'
+  if (lower.includes('already registered') || lower.includes('already exists')) {
+    return 'An account with that email already exists.'
   }
-  if (code.includes('email-already-in-use')) return 'An account with that email already exists.'
-  if (code.includes('weak-password')) return 'Password should be at least 6 characters.'
-  if (code.includes('invalid-email')) return 'Enter a valid email address.'
-  if (code.includes('too-many-requests')) return 'Too many attempts. Try again shortly.'
-  if (code.includes('network-request-failed')) return 'Network error. Check your connection.'
-  return 'Something went wrong. Please try again.'
+  if (lower.includes('network')) return 'Network error. Check your connection.'
+
+  // Supabase's own messages for weak passwords / invalid emails are already clear.
+  return message
 }
