@@ -1,131 +1,124 @@
 # FlexLog (mobile)
 
-A workout tracker built with Expo + Expo Router, NativeWind (Tailwind for React Native), and
-Supabase (Auth + Postgres) so your logged sets sync to your account and follow you to any phone,
-at any gym.
+A workout tracker built with **Expo + Expo Router**, **NativeWind** (Tailwind for React Native),
+and **Supabase** (Auth + Postgres + Realtime), so the sets you log follow you to any phone, at any
+gym, the moment you save them.
 
 The previous web version (Vite + React + localStorage) has been moved to [`legacy-web/`](./legacy-web)
-and is untouched — nothing was deleted.
+and is untouched — nothing was deleted, it's just no longer the active app.
 
-## Folder structure
+## Features
+
+**Auth**
+- Email/password sign up, login, logout via Supabase Auth
+- Routes are gated with Expo Router's `Stack.Protected` — signed out users can only reach
+  `(auth)`, signed in users can only reach `(tabs)`
+- "Forgot password?" sends a real Supabase password-reset email
+- No social login (Google/GitHub/Apple) yet — that needs OAuth provider setup in the Supabase
+  dashboard plus native auth packages, so it's intentionally left out rather than faked
+
+**Log a set**
+- Exercise picker (tap the exercise field to open it): search, filter by category
+  (Chest / Back / Legs / Shoulders / Arms / Core / Other), a **Favorites** tab, a **Recent** tab
+  built from your own logging history, and one-tap quick-add for a custom exercise that doesn't
+  exist in the library yet
+- Every exercise gets a color-coded icon matched to its muscle group and movement (a barbell
+  press glyph, a flexed-arm curl glyph, a rowing glyph, etc.) instead of one generic icon
+- Enter weight, sets, and reps — one entry can represent e.g. "3 sets × 8 reps @ 135lb"
+- Live estimated-1RM preview as you type weight/reps, using the Epley formula
+- Editing an existing set or repeating a past one pre-fills the form
+- A distinct celebratory toast + haptic when a logged set beats your previous best estimated 1RM
+  for that exercise
+
+**History**
+- Every set grouped by date, with 🏆 PR badges on entries that were a personal best
+- Filter chips per exercise
+- Swipe a row **left** to reveal Edit / Delete, swipe **right** to reveal Repeat — delete comes
+  with an Undo toast
+
+**Progress**
+- Best estimated 1RM per exercise (lb/kg toggle), ranked with medal markers for the top 3
+- Weekly consistency bar chart with a running streak counter
+
+**Profile**
+- Colored gradient initials avatar (deterministic per user), tap-to-edit display name, email,
+  member-since date
+- Lifetime stats: total sets logged, exercises tracked, current streak, best estimated 1RM
+
+**Settings**
+- Dark mode toggle
+- Export all your data as JSON via the native share sheet
+- Clear all data (two-tap confirm)
+
+**Sync**
+- Everything above reads/writes Postgres tables scoped to your account via Row Level Security —
+  log in on a second device and your data (and, for `entries`, live changes) is just there
+
+**Feel**
+- A small shared design system (`src/lib/theme.js`, `Card`, `Chip`, `Badge`, `MetricCard`,
+  `EmptyState`, `SettingRow`, `SectionHeader`, `IconButton`) so every screen uses the same
+  surfaces, spacing, and colors instead of one-off styles
+- Reanimated micro-interactions: spring-in list rows, a sliding active-tab indicator, success
+  flash on save, count-up stat numbers
+- Swipeable list rows (`react-native-gesture-handler`) instead of tiny inline buttons
+- Shimmer skeleton loaders while data is in flight, instead of a bare spinner
+- Haptic feedback on nearly every meaningful tap (`expo-haptics`)
+
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| App framework | Expo (SDK 57), Expo Router (file-based navigation) |
+| UI | React Native 0.86, NativeWind 4 (Tailwind classes), `@expo/vector-icons` (Ionicons + MaterialCommunityIcons), `expo-linear-gradient` |
+| Animation / gestures | `react-native-reanimated`, `react-native-gesture-handler` (swipeable rows, custom tab bar), `expo-haptics` |
+| Charts | `react-native-gifted-charts`, `react-native-svg` |
+| Backend | Supabase — Postgres, Auth, Realtime, Row Level Security |
+| Local persistence | `@react-native-async-storage/async-storage` (unit preference, theme) |
+
+## Project structure
 
 ```
-app/                      Expo Router — file-based routes
-  _layout.jsx              Root: wraps providers, gates (tabs) vs (auth) on login state
-  (auth)/                  Public routes — only reachable when signed out
+app/                        Expo Router — file-based routes
+  _layout.jsx                 Root: GestureHandlerRootView, providers, gates (tabs) vs (auth)
+  (auth)/                     Public routes — only reachable when signed out
     _layout.jsx
-    index.jsx               Login screen
-    signup.jsx               Sign up screen
-  (tabs)/                  Protected routes — only reachable when signed in
-    _layout.jsx              Tab bar (Log / History / Progress / Settings)
-    index.jsx                 Log a set + stats + recent activity
-    history.jsx
-    progress.jsx
-    settings.jsx
+    index.jsx                   Login screen
+    signup.jsx                   Sign up screen
+  (tabs)/                     Protected routes — only reachable when signed in
+    _layout.jsx                 Tab bar (Log / History / Progress / Profile / Settings)
+    index.jsx                    Log a set + stats + recent activity
+    history.jsx                  Full history, grouped by date, filterable
+    progress.jsx                 Best 1RM per exercise + consistency chart
+    profile.jsx                  Avatar, editable name, lifetime stats, sign out
+    settings.jsx                 Dark mode, export, clear data
 
 src/
-  lib/                     Framework-free business logic (ported from the web app)
-    supabase.js              Supabase client init (reads from .env)
-    oneRepMax.js, dates.js, units.js
-    authErrors.js
-  context/                 App-wide state, kept separate from the UI
-    AuthContext.jsx          Supabase auth session
-    EntriesContext.jsx        Realtime-synced workout entries + edit state
-    ToastContext.jsx          In-app toast notifications
+  lib/                       Framework-free business logic (ported from the web app)
+    supabase.js                 Supabase client init (reads from .env)
+    theme.js                     Shared color tokens for places className can't reach
+    categories.js                 Per-muscle-group accent colors
+    exerciseIcons.js              Exercise name -> movement icon lookup
+    oneRepMax.js                 Epley 1RM estimate + best-per-exercise ranking
+    dates.js                     Streaks, week grouping, local-calendar-date helpers
+    units.js                     lb <-> kg conversion
+    authErrors.js                 Supabase auth errors -> friendly copy
+  context/                    App-wide state, kept separate from the UI
+    AuthContext.jsx              Supabase auth session, profile update, password reset
+    EntriesContext.jsx           Realtime-synced workout entries + edit/repeat state
+    ExercisesContext.jsx         Exercise library + favorites
+    ToastContext.jsx             In-app toast notifications (incl. PR celebration variant)
   hooks/
-    useEntries.js, useCountUp.js, usePersistedState.js
-  components/              Shared, reusable UI pieces
-    WorkoutForm, EntryRow, StatCard, OneRepMaxSummary, ConsistencyChart,
-    PrimaryButton, ScreenContainer
+    useEntries.js, useExercises.js, useCountUp.js, usePersistedState.js
+  components/                Shared, reusable UI pieces
+    ScreenContainer, ScreenHeader, SectionHeader, Card    layout primitives
+    Chip, Badge, IconButton, SettingRow, EmptyState        small reusable controls
+    Avatar, Skeleton                                       profile avatar, shimmer placeholders
+    WorkoutForm, ExercisePicker                            the log-a-set flow
+    EntryRow                                               swipeable set row (History + recent activity)
+    MetricCard, OneRepMaxSummary, ConsistencyChart         progress + stats
+    PrimaryButton, TextField, PasswordField, AnimatedTabBar, AnimatedTabButton
 ```
 
 Auth screens, protected app screens, business logic, and shared UI each live in their own
 directory so the auth flow can be reasoned about independently from the logged-in app.
 
-## One-time setup
-
-### 1. Create a Supabase project
-
-You'll need to do this yourself at [supabase.com](https://supabase.com/dashboard) — it requires
-your own account, so it isn't something that can be scripted for you:
-
-1. **New project** → pick an org, name it (e.g. `flexlog`), set a database password (save it
-   somewhere — you won't need it day-to-day, but you'll want it if you ever connect a DB client
-   directly), pick a region → **Create new project** (takes ~1-2 minutes to provision).
-2. Once it's ready, open the **SQL Editor** (left sidebar) → **New query**, paste this, and run it:
-
-   ```sql
-   create table entries (
-     id uuid primary key default gen_random_uuid(),
-     user_id uuid not null references auth.users(id) on delete cascade,
-     exercise text not null,
-     weight numeric not null,
-     reps integer not null,
-     unit text not null check (unit in ('lb', 'kg')),
-     date text not null,
-     created_at timestamptz not null default now()
-   );
-
-   alter table entries enable row level security;
-
-   create policy "Users manage their own entries"
-     on entries
-     for all
-     using (auth.uid() = user_id)
-     with check (auth.uid() = user_id);
-
-   alter publication supabase_realtime add table entries;
-   ```
-
-   This creates the table, turns on Row Level Security so users can only ever see their own rows,
-   and enables realtime so the app updates live across devices.
-3. *(Optional, recommended for quick testing)* **Authentication → Providers → Email** → turn off
-   **Confirm email**. With it on, Supabase emails a confirmation link before a new signup can log
-   in — fine for a real launch, mildly annoying while you're just testing on your own phone.
-4. **Project Settings (gear icon) → Data API** → copy the **Project URL**.
-5. **Project Settings → API Keys** → copy the **anon / public** key (not the `service_role` one —
-   that one must never go in the app).
-
-### 2. Configure the app
-
-```bash
-cp .env.example .env
-```
-
-Fill in `.env` with the values from steps 1.4–1.5:
-
-```
-EXPO_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
-```
-
-`.env` is gitignored, so your keys stay local. The anon key is safe to ship in the app — it's
-meant to be public; Row Level Security (step 1.2) is what actually protects the data.
-
-### 3. Install and run
-
-```bash
-npm install
-npx expo start
-```
-
-Scan the QR code with the **Expo Go** app (iOS/Android) to run it on your phone. Sign up for an
-account on your phone, then sign in with the same account on another device to see your sets sync.
-
-## What's implemented
-
-- Email/password sign up, login, logout (Supabase Auth), gated with Expo Router's
-  `Stack.Protected`.
-- Log a set, live estimated-1RM preview, per-exercise suggestions.
-- History grouped by date, PR badges, edit/delete with undo, per-exercise filter chips.
-- Progress: best estimated 1RM per exercise (lb/kg toggle) and a weekly consistency chart.
-- Settings: dark mode toggle, share data as JSON, clear all data, sign out.
-- All workout data lives in the Postgres `entries` table, scoped per-user by Row Level Security
-  and synced in real time via Supabase Realtime.
-
-## Known limitations
-
-- **Import from JSON** isn't implemented yet (export/share is) — picking and parsing a file needs
-  `expo-document-picker`, left out to keep the initial scope focused. Easy to add later.
-- The app icon/splash are still the default Expo placeholders — swap the files in `assets/` and
-  update `app.json` when you're ready to brand it.
