@@ -6,6 +6,7 @@ const EntriesContext = createContext(null)
 export function EntriesProvider({ children }) {
   const entriesApi = useEntries()
   const [editingId, setEditingId] = useState(null)
+  const [prefillEntry, setPrefillEntry] = useState(null)
 
   const editingEntry = entriesApi.entries.find((entry) => entry.id === editingId) ?? null
 
@@ -17,8 +18,21 @@ export function EntriesProvider({ children }) {
     setEditingId(null)
   }
 
+  function repeatEntry(entry) {
+    setPrefillEntry({
+      exercise: entry.exercise,
+      weight: entry.weight,
+      reps: entry.reps,
+      sets: entry.sets,
+      unit: entry.unit,
+      token: Date.now(),
+    })
+  }
+
   return (
-    <EntriesContext.Provider value={{ ...entriesApi, editingEntry, startEdit, cancelEdit }}>
+    <EntriesContext.Provider
+      value={{ ...entriesApi, editingEntry, startEdit, cancelEdit, prefillEntry, repeatEntry }}
+    >
       {children}
     </EntriesContext.Provider>
   )
