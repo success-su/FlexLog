@@ -30,3 +30,17 @@ export function bestOneRepMaxByExercise(entries, targetUnit = 'lb') {
     .map(([exercise, data]) => ({ exercise, ...data }))
     .sort((a, b) => b.oneRm - a.oneRm)
 }
+
+// Chronological estimated-1RM per session for one exercise, most recent
+// `limit` sessions — feeds the expandable trend sparkline on the Progress tab.
+export function oneRmTrendForExercise(entries, exercise, targetUnit = 'lb', limit = 8) {
+  const forExercise = entries
+    .filter((e) => e.exercise === exercise)
+    .map((e) => ({
+      date: e.date,
+      oneRm: estimateOneRepMax(convertWeight(e.weight, e.unit, targetUnit), e.reps),
+    }))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+
+  return forExercise.slice(Math.max(0, forExercise.length - limit))
+}
