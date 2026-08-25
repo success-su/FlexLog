@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Pressable, Text, View } from 'react-native'
 import DateTimePicker from '@react-native-community/datetimepicker'
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
+import * as Haptics from 'expo-haptics'
 import Animated, {
+  ZoomIn,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
@@ -9,11 +12,19 @@ import Animated, {
 } from 'react-native-reanimated'
 import { estimateOneRepMax } from '../lib/oneRepMax'
 import { todayISO } from '../lib/dates'
+import { iconForExercise } from '../lib/exerciseIcons'
 import { PrimaryButton } from './PrimaryButton'
+import { TextField } from './TextField'
+import { Stepper } from './Stepper'
+import { ExercisePicker } from './ExercisePicker'
+import { Badge } from './Badge'
+import { useThemeColors } from '../lib/theme'
+import { useExercisesContext } from '../context/ExercisesContext'
 
 const EMPTY_FORM = {
   exercise: '',
   weight: '',
+  sets: '1',
   reps: '',
   unit: 'lb',
   date: todayISO(),
@@ -27,9 +38,12 @@ function formatDateLabel(iso) {
   })
 }
 
-export function WorkoutForm({ onAdd, onSave, onCancelEdit, editingEntry, exerciseNames = [] }) {
+export function WorkoutForm({ onAdd, onSave, onCancelEdit, editingEntry, prefillEntry }) {
+  const colors = useThemeColors()
+  const { exercises } = useExercisesContext()
   const [form, setForm] = useState(EMPTY_FORM)
   const [showDatePicker, setShowDatePicker] = useState(false)
+  const [showExercisePicker, setShowExercisePicker] = useState(false)
   const isEditing = Boolean(editingEntry)
 
   const shakeX = useSharedValue(0)
@@ -40,6 +54,7 @@ export function WorkoutForm({ onAdd, onSave, onCancelEdit, editingEntry, exercis
       setForm({
         exercise: editingEntry.exercise,
         weight: String(editingEntry.weight),
+        sets: String(editingEntry.sets ?? 1),
         reps: String(editingEntry.reps),
         unit: editingEntry.unit,
         date: editingEntry.date,
@@ -47,7 +62,26 @@ export function WorkoutForm({ onAdd, onSave, onCancelEdit, editingEntry, exercis
     }
   }, [editingEntry])
 
+  useEffect(() => {
+    if (prefillEntry) {
+      setForm((prev) => ({
+        ...prev,
+        exercise: prefillEntry.exercise,
+        weight: String(prefillEntry.weight),
+        sets: String(prefillEntry.sets ?? 1),
+        reps: String(prefillEntry.reps),
+        unit: prefillEntry.unit,
+      }))
+    }
+  }, [prefillEntry])
+
   const liveOneRm = estimateOneRepMax(form.weight, form.reps)
+  const selectedExercise = exercises.find(
+    (e) => e.name.toLowerCase() === form.exercise.toLowerCase(),
+  )
+  const exerciseIcon = form.exercise
+    ? iconForExercise(form.exercise, selectedExercise?.category)
+    : 'dumbbell'
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -71,14 +105,16 @@ export function WorkoutForm({ onAdd, onSave, onCancelEdit, editingEntry, exercis
   }
 
   function handleSubmit() {
-    if (!form.exercise.trim() || !form.weight || !form.reps) {
+    if (!form.exercise.trim() || !form.weight || !form.reps || !form.sets) {
       playShake()
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
       return
     }
 
     const payload = {
       exercise: form.exercise.trim(),
       weight: Number(form.weight),
+      sets: Number(form.sets),
       reps: Number(form.reps),
       unit: form.unit,
       date: form.date,
@@ -89,6 +125,7 @@ export function WorkoutForm({ onAdd, onSave, onCancelEdit, editingEntry, exercis
     } else {
       onAdd(payload)
       playSuccessFlash()
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
     }
 
     setForm((prev) => ({ ...EMPTY_FORM, unit: prev.unit, date: prev.date }))
@@ -107,106 +144,89 @@ export function WorkoutForm({ onAdd, onSave, onCancelEdit, editingEntry, exercis
     opacity: flashOpacity.value,
   }))
 
-  const suggestions = exerciseNames.filter(
-    (name) =>
-      form.exercise.length > 0 &&
-      name.toLowerCase().includes(form.exercise.toLowerCase()) &&
-      name.toLowerCase() !== form.exercise.toLowerCase(),
-  )
-
   return (
     <Animated.View
-      style={shakeStyle}
-      className={`overflow-hidden rounded-2xl border bg-white p-5 shadow-sm dark:bg-neutral-900 ${
-        isEditing
-          ? 'border-blue-300 dark:border-blue-800'
-          : 'border-neutral-200 dark:border-neutral-800'
+      style={[
+        shakeStyle,
+        isEditing ? { borderColor: colors.accent } : undefined,
+      ]}
+      className={`overflow-hidden rounded-2xl border bg-white p-5 dark:bg-ink-900 ${
+        isEditing ? '' : 'border-mist-200/70 dark:border-ink-800'
       }`}
     >
       <Animated.View
         pointerEvents="none"
         style={flashStyle}
-        className="absolute inset-0 rounded-2xl border-2 border-green-500"
+        className="absolute inset-0 rounded-2xl border-2 border-emerald-500"
       />
 
       <View className="mb-4 flex-row items-center justify-between">
-        <Text className="text-sm font-semibold text-neutral-900 dark:text-white">
+        <Text className="text-sm font-semibold text-mist-900 dark:text-white">
           {isEditing ? 'Edit set' : 'Log a set'}
         </Text>
-        {isEditing && (
-          <View className="rounded-full bg-blue-50 px-2.5 py-1 dark:bg-blue-950">
-            <Text className="text-xs font-medium text-blue-700 dark:text-blue-300">
-              Editing {editingEntry.exercise}
-            </Text>
-          </View>
-        )}
+        {isEditing && <Badge label={`Editing ${editingEntry.exercise}`} tone="accent" />}
       </View>
 
       <View className="gap-3.5">
         <View>
-          <Text className="mb-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+          <Text className="mb-1.5 text-xs font-medium text-mist-500 dark:text-ink-400">
             Exercise
           </Text>
-          <TextInput
-            value={form.exercise}
-            onChangeText={(text) => update('exercise', text)}
-            placeholder="Bench Press"
-            placeholderTextColor="#a1a1aa"
-            className="rounded-xl border border-neutral-300 bg-white px-3.5 py-3 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-          />
-          {suggestions.length > 0 && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              className="mt-2"
-              contentContainerStyle={{ gap: 8 }}
+          <Pressable
+            onPress={() => setShowExercisePicker(true)}
+            className="flex-row items-center gap-2.5 rounded-xl border border-mist-300 bg-white px-3.5 py-3.5 transition active:bg-mist-50 dark:border-ink-700 dark:bg-ink-800 dark:active:bg-ink-700"
+          >
+            <MaterialCommunityIcons
+              name={exerciseIcon}
+              size={18}
+              color={form.exercise ? colors.accent : colors.icon}
+            />
+            <Text
+              className={`flex-1 text-base font-medium ${
+                form.exercise
+                  ? 'text-mist-900 dark:text-white'
+                  : 'text-mist-400 dark:text-ink-500'
+              }`}
             >
-              {suggestions.slice(0, 6).map((name) => (
-                <Pressable
-                  key={name}
-                  onPress={() => update('exercise', name)}
-                  className="rounded-full bg-neutral-100 px-3 py-1.5 active:bg-neutral-200 dark:bg-neutral-800 dark:active:bg-neutral-700"
-                >
-                  <Text className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
-                    {name}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          )}
+              {form.exercise || 'Select an exercise'}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.icon} />
+          </Pressable>
+          <ExercisePicker
+            visible={showExercisePicker}
+            onClose={() => setShowExercisePicker(false)}
+            onSelect={(name) => update('exercise', name)}
+          />
         </View>
 
         <View className="flex-row gap-3">
-          <View className="flex-1">
-            <Text className="mb-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-              Weight
-            </Text>
-            <TextInput
-              value={form.weight}
-              onChangeText={(text) => update('weight', text)}
-              placeholder="135"
-              placeholderTextColor="#a1a1aa"
-              keyboardType="decimal-pad"
-              className="rounded-xl border border-neutral-300 bg-white px-3.5 py-3 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-            />
-          </View>
+          <TextField
+            label="Weight"
+            value={form.weight}
+            onChangeText={(text) => update('weight', text)}
+            placeholder="135"
+            keyboardType="decimal-pad"
+            className="flex-1"
+          />
 
           <View>
-            <Text className="mb-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+            <Text className="mb-1.5 text-xs font-medium text-mist-500 dark:text-ink-400">
               Unit
             </Text>
-            <View className="flex-row overflow-hidden rounded-xl border border-neutral-300 dark:border-neutral-700">
+            <View className="flex-row overflow-hidden rounded-xl border border-mist-300 dark:border-ink-700">
               {['lb', 'kg'].map((u) => (
                 <Pressable
                   key={u}
-                  onPress={() => update('unit', u)}
-                  className={`px-3.5 py-3 ${
-                    form.unit === u ? 'bg-blue-600' : 'bg-white dark:bg-neutral-800'
-                  }`}
+                  onPress={() => {
+                    Haptics.selectionAsync()
+                    update('unit', u)
+                  }}
+                  className={`px-3.5 py-3 ${form.unit === u ? '' : 'bg-white dark:bg-ink-800'}`}
+                  style={form.unit === u ? { backgroundColor: colors.accent } : undefined}
                 >
                   <Text
                     className={`text-sm font-medium ${
-                      form.unit === u ? 'text-white' : 'text-neutral-600 dark:text-neutral-300'
+                      form.unit === u ? 'text-white' : 'text-mist-600 dark:text-ink-300'
                     }`}
                   >
                     {u}
@@ -215,31 +235,34 @@ export function WorkoutForm({ onAdd, onSave, onCancelEdit, editingEntry, exercis
               ))}
             </View>
           </View>
+        </View>
 
-          <View className="flex-1">
-            <Text className="mb-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-              Reps
-            </Text>
-            <TextInput
-              value={form.reps}
-              onChangeText={(text) => update('reps', text)}
-              placeholder="8"
-              placeholderTextColor="#a1a1aa"
-              keyboardType="number-pad"
-              className="rounded-xl border border-neutral-300 bg-white px-3.5 py-3 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
-            />
-          </View>
+        <View className="flex-row gap-3">
+          <Stepper
+            label="Sets"
+            value={form.sets}
+            onChange={(text) => update('sets', text)}
+            className="flex-1"
+          />
+
+          <Stepper
+            label="Reps"
+            value={form.reps}
+            onChange={(text) => update('reps', text)}
+            className="flex-1"
+          />
         </View>
 
         <View>
-          <Text className="mb-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+          <Text className="mb-1.5 text-xs font-medium text-mist-500 dark:text-ink-400">
             Date
           </Text>
           <Pressable
             onPress={() => setShowDatePicker(true)}
-            className="rounded-xl border border-neutral-300 bg-white px-3.5 py-3 active:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:active:bg-neutral-700"
+            className="flex-row items-center gap-2 self-start rounded-xl border border-mist-300 bg-white px-3.5 py-3 active:bg-mist-50 dark:border-ink-700 dark:bg-ink-800 dark:active:bg-ink-700"
           >
-            <Text className="text-sm text-neutral-900 dark:text-white">
+            <Ionicons name="calendar-outline" size={15} color={colors.icon} />
+            <Text className="text-sm text-mist-900 dark:text-white">
               {formatDateLabel(form.date)}
             </Text>
           </Pressable>
@@ -262,20 +285,28 @@ export function WorkoutForm({ onAdd, onSave, onCancelEdit, editingEntry, exercis
         </View>
       </View>
 
-      <View className="mt-4 flex-row items-center justify-between gap-3">
-        <Text className="flex-1 text-xs text-neutral-500 dark:text-neutral-400">
-          {liveOneRm > 0 ? (
-            <>
-              Est. 1RM{' '}
-              <Text className="font-semibold text-blue-600 dark:text-blue-400">
-                {liveOneRm.toFixed(1)} {form.unit}
-              </Text>
-            </>
-          ) : (
-            'Enter weight and reps to preview 1RM'
-          )}
-        </Text>
-      </View>
+      <Animated.View
+        key={liveOneRm > 0 ? 'preview' : 'empty'}
+        entering={ZoomIn.duration(180)}
+        className="mt-4 flex-row items-center justify-between rounded-xl px-4 py-3.5"
+        style={{ backgroundColor: colors.accentSoft }}
+      >
+        <View className="flex-row items-center gap-2">
+          <Ionicons name="trending-up" size={15} color={colors.accent} />
+          <Text className="text-xs font-medium text-mist-500 dark:text-ink-400">
+            Estimated 1RM
+          </Text>
+        </View>
+        {liveOneRm > 0 ? (
+          <Text className="text-lg font-extrabold" style={{ color: colors.accent }}>
+            {liveOneRm.toFixed(1)} <Text className="text-xs font-semibold">{form.unit}</Text>
+          </Text>
+        ) : (
+          <Text className="text-xs text-mist-400 dark:text-ink-500">
+            Enter weight &amp; reps
+          </Text>
+        )}
+      </Animated.View>
 
       <View className="mt-4 flex-row gap-2.5">
         {isEditing && (
