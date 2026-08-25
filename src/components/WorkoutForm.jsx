@@ -4,7 +4,6 @@ import DateTimePicker from '@react-native-community/datetimepicker'
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'
 import * as Haptics from 'expo-haptics'
 import Animated, {
-  
   ZoomIn,
   useAnimatedStyle,
   useSharedValue,
