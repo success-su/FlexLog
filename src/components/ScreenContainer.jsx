@@ -1,13 +1,15 @@
-import { ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useThemeColors } from '../lib/theme'
 
-export function ScreenContainer({ children, scroll = true }) {
+export function ScreenContainer({ children, scroll = true, refreshing = false, onRefresh }) {
   const insets = useSafeAreaInsets()
+  const colors = useThemeColors()
 
   if (!scroll) {
     return (
       <View
-        className="flex-1 bg-neutral-50 dark:bg-neutral-950"
+        className="flex-1 bg-mist-50 dark:bg-ink-950"
         style={{ paddingTop: insets.top }}
       >
         <View className="flex-1 gap-4 p-4">{children}</View>
@@ -16,10 +18,15 @@ export function ScreenContainer({ children, scroll = true }) {
   }
 
   return (
-    <View className="flex-1 bg-neutral-50 dark:bg-neutral-950" style={{ paddingTop: insets.top }}>
+    <View className="flex-1 bg-mist-50 dark:bg-ink-950" style={{ paddingTop: insets.top }}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, gap: 16 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, gap: 14 }}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+          ) : undefined
+        }
       >
         {children}
       </ScrollView>
